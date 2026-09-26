@@ -1,0 +1,99 @@
+version: '3.9'
+
+services:
+  # PostgreSQL - Primary Relational DB
+  postgres:
+    image: postgres:16-alpine
+    container_name: massengar_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-massengar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-massengar_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-massengar_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U massengar -d massengar_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - massengar_net
+
+  # Redis - Session, Pub/Sub, Presence Engine
+  redis:
+    image: redis:7-alpine
+    container_name: massengar_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD:-redis_secret}
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - massengar_net
+
+  # Coturn - WebRTC STUN/TURN Server
+  coturn:
+    image: coturn/coturn:latest
+    container_name: massengar_coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: -c /etc/coturn/turnserver.conf
+
+  # Backend Node.js Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: massengar_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-massengar}:${POSTGRES_PASSWORD:-massengar_secret}@postgres:5432/${POSTGRES_DB:-massengar_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - ./backend/src:/app/src
+      - backend_node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - massengar_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+networks:
+  massengar_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_node_modules:
