@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.primary.withOpacity(0.4),
+                    AppTheme.primary.withValues(alpha: 0.4),
                     Colors.transparent,
                   ],
                 ),
@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.secondary.withOpacity(0.3),
+                    AppTheme.secondary.withValues(alpha: 0.3),
                     Colors.transparent,
                   ],
                 ),
@@ -128,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(
+                          const Text(
                             "End-to-End Encrypted",
                             style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
                           ),
@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text("Don't have an account? ", style: TextStyle(color: AppTheme.textMuted)),
+                              const Text("Don't have an account? ", style: TextStyle(color: AppTheme.textMuted)),
                               GestureDetector(
                                 onTap: () {},
                                 child: const Text("Sign Up", style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),

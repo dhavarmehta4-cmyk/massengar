@@ -3,6 +3,7 @@
 // Phase 4: Chat Lock + Anti-Screenshot + Secure Local Storage
 // ================================================================
 
+import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 import "package:local_auth/local_auth.dart";
 import "package:flutter_secure_storage/flutter_secure_storage.dart";
@@ -10,7 +11,6 @@ import "package:sqflite_sqlcipher/sqflite.dart";
 import "package:path/path.dart";
 import "dart:convert";
 import "dart:math";
-import "dart:typed_data";
 
 // -- Biometric Authentication Service ------------------------------
 
@@ -63,7 +63,7 @@ class BiometricAuthService {
       );
       return didAuthenticate;
     } on PlatformException catch (e) {
-      print("Biometric auth error: $e");
+      debugPrint("Biometric auth error: $e");
       return false;
     }
   }
@@ -346,7 +346,7 @@ class LocalDatabase {
 // -- Anti-Screenshot / Screen Security Service ---------------------
 
 class ScreenSecurityService {
-  static final MethodChannel _channel = const MethodChannel("massengar/screen_security");
+  static const MethodChannel _channel = MethodChannel("massengar/screen_security");
 
   /// Enable FLAG_SECURE (Android) or screen masking (iOS)
   /// Call before rendering locked chat content
@@ -354,25 +354,29 @@ class ScreenSecurityService {
     try {
       await _channel.invokeMethod("enableSecureMode");
     } on PlatformException catch (e) {
-      print("Screen security error: $e");
+      debugPrint("Screen security error: $e");
     }
   }
+
+  static Future<void> enableSecureScreen() => enableSecureMode();
 
   /// Disable secure mode when leaving locked chat
   static Future<void> disableSecureMode() async {
     try {
       await _channel.invokeMethod("disableSecureMode");
     } on PlatformException catch (e) {
-      print("Screen security error: $e");
+      debugPrint("Screen security error: $e");
     }
   }
+
+  static Future<void> disableSecureScreen() => disableSecureMode();
 
   /// Blur app thumbnail in recent apps switcher (for locked chats)
   static Future<void> setAppSwitcherBlurred(bool blurred) async {
     try {
       await _channel.invokeMethod("setAppSwitcherBlurred", {"blurred": blurred});
     } on PlatformException catch (e) {
-      print("App switcher blur error: $e");
+      debugPrint("App switcher blur error: $e");
     }
   }
 }

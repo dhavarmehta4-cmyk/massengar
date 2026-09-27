@@ -73,7 +73,7 @@ export class AuthService {
     password: string
   ): Promise<{ user: Partial<User>; accessToken: string; refreshToken: string }> {
 
-    const user = await db.queryOne<User & { password_hash: string }>(
+    const user = await db.queryOne<User & { password_hash: string; is_active: boolean }>(
       `SELECT id, username, display_name, phone_number, email, avatar_url,
               password_hash, is_active, is_verified
        FROM users

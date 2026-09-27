@@ -76,10 +76,11 @@ export async function messagingRoutes(app: FastifyInstance) {
       if (existing) return reply.send({ success: true, conversation: existing });
 
       const conversation = await db.transaction(async (client) => {
-        const [conv] = await client.query(
+        const convResult = await client.query(
           "INSERT INTO conversations (type, created_by) VALUES ('direct',$1) RETURNING *",
           [userId]
         );
+        const conv = convResult.rows[0];
         await client.query(
           "INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1,$2),($1,$3)",
           [conv.id, userId, targetUserId]

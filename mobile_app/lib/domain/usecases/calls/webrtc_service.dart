@@ -4,10 +4,10 @@
 // ================================================================
 
 import "dart:async";
-import "dart:convert";
 import "package:flutter_webrtc/flutter_webrtc.dart";
-import "package:socket_io_client/socket_io_client.dart" as IO;
+import "package:socket_io_client/socket_io_client.dart" as io_client;
 import "package:uuid/uuid.dart";
+import "../../../core/network/socket_client.dart";
 
 enum CallState { idle, outgoing, incoming, connecting, connected, ended }
 enum CallType { audio, video }
@@ -23,10 +23,15 @@ class WebRtcService {
   factory WebRtcService() => _instance;
   WebRtcService._internal();
 
-  IO.Socket? _socket;
+  io_client.Socket? _socket;
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
+
+  // Real RTCVideoRenderer instances for local and remote video rendering
+  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+  bool _renderersInitialized = false;
 
   final _uuid = const Uuid();
   String? _currentCallId;
@@ -44,8 +49,23 @@ class WebRtcService {
   Stream<CallEvent> get callEventStream => _callEventController.stream;
 
   CallState get callState => _callState;
+  CallType get callType => _callType;
+  String? get currentCallId => _currentCallId;
+  String? get currentPeerId => _currentPeerId;
   MediaStream? get localStream => _localStream;
   MediaStream? get remoteStream => _remoteStream;
+  RTCVideoRenderer get localRenderer => _localRenderer;
+  RTCVideoRenderer get remoteRenderer => _remoteRenderer;
+
+  // -- Renderer Initialization ---------------------------------------
+
+  Future<void> initializeRenderers() async {
+    if (!_renderersInitialized) {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
+      _renderersInitialized = true;
+    }
+  }
 
   // -- ICE Server Config (from backend TURN endpoint) ----------------
 
@@ -60,16 +80,24 @@ class WebRtcService {
 
   // -- Initialize with Socket ----------------------------------------
 
-  void initializeSocket(IO.Socket socket) {
+  void initializeSocket(io_client.Socket socket) {
     _socket = socket;
     _setupSocketListeners();
   }
 
   void _setupSocketListeners() {
-    _socket?.on("webrtc:offer", _handleIncomingOffer);
-    _socket?.on("webrtc:answer", _handleAnswer);
-    _socket?.on("webrtc:ice-candidate", _handleIceCandidate);
-    _socket?.on("webrtc:call-end", _handleCallEnd);
+    _socket?.on("webrtc:offer", (data) => handleIncomingOffer(Map<String, dynamic>.from(data as Map)));
+    _socket?.on("webrtc:answer", (data) => handleAnswer(Map<String, dynamic>.from(data as Map)));
+    _socket?.on("webrtc:ice-candidate", (data) => handleIceCandidate(Map<String, dynamic>.from(data as Map)));
+    _socket?.on("webrtc:call-end", (data) => handleCallEnd(Map<String, dynamic>.from(data as Map)));
+  }
+
+  void _emitSignaling(String event, Map<String, dynamic> payload) {
+    if (_socket != null) {
+      _socket!.emit(event, payload);
+    } else {
+      SocketClient().emitSignaling(event, payload);
+    }
   }
 
   // -- Start Outgoing Call -------------------------------------------
@@ -85,27 +113,29 @@ class WebRtcService {
     _callType = callType;
     _updateCallState(CallState.outgoing);
 
-    // Get local media
+    // Initialize renderers and local media
+    await initializeRenderers();
     _localStream = await _getUserMedia(callType);
+    _localRenderer.srcObject = _localStream;
 
     // Create peer connection
     await _createPeerConnection();
 
     // Add local tracks
-    _localStream!.getTracks().forEach((track) {
-      _peerConnection!.addTrack(track, _localStream!);
-    });
+    for (final track in _localStream!.getTracks()) {
+      await _peerConnection!.addTrack(track, _localStream!);
+    }
 
     // Create offer
     final offer = await _peerConnection!.createOffer(
       callType == CallType.audio
-        ? {"offerToReceiveAudio": true, "offerToReceiveVideo": false}
-        : {"offerToReceiveAudio": true, "offerToReceiveVideo": true},
+          ? {"offerToReceiveAudio": true, "offerToReceiveVideo": false}
+          : {"offerToReceiveAudio": true, "offerToReceiveVideo": true},
     );
     await _peerConnection!.setLocalDescription(offer);
 
     // Send offer via signaling
-    _socket?.emit("webrtc:offer", {
+    _emitSignaling("webrtc:offer", {
       "callId": _currentCallId,
       "targetUserId": targetUserId,
       "sdp": offer.toMap(),
@@ -134,18 +164,21 @@ class WebRtcService {
     _callType = callType;
     _updateCallState(CallState.connecting);
 
+    await initializeRenderers();
     _localStream = await _getUserMedia(callType);
+    _localRenderer.srcObject = _localStream;
+
     await _createPeerConnection();
 
-    _localStream!.getTracks().forEach((track) {
-      _peerConnection!.addTrack(track, _localStream!);
-    });
+    for (final track in _localStream!.getTracks()) {
+      await _peerConnection!.addTrack(track, _localStream!);
+    }
 
     await _peerConnection!.setRemoteDescription(offer);
     final answer = await _peerConnection!.createAnswer();
     await _peerConnection!.setLocalDescription(answer);
 
-    _socket?.emit("webrtc:answer", {
+    _emitSignaling("webrtc:answer", {
       "callId": callId,
       "targetUserId": callerUserId,
       "sdp": answer.toMap(),
@@ -155,7 +188,7 @@ class WebRtcService {
   // -- Reject / End Call ---------------------------------------------
 
   Future<void> rejectCall({required String callId, required String callerUserId}) async {
-    _socket?.emit("webrtc:call-end", {
+    _emitSignaling("webrtc:call-end", {
       "callId": callId,
       "targetUserId": callerUserId,
       "reason": "rejected",
@@ -165,7 +198,7 @@ class WebRtcService {
 
   Future<void> endCall() async {
     if (_currentCallId == null || _currentPeerId == null) return;
-    _socket?.emit("webrtc:call-end", {
+    _emitSignaling("webrtc:call-end", {
       "callId": _currentCallId,
       "targetUserId": _currentPeerId,
       "reason": "ended",
@@ -176,15 +209,15 @@ class WebRtcService {
   // -- Audio/Video Controls ------------------------------------------
 
   Future<void> toggleMute(bool muted) async {
-    _localStream?.getAudioTracks().forEach((track) {
+    for (final track in _localStream?.getAudioTracks() ?? <MediaStreamTrack>[]) {
       track.enabled = !muted;
-    });
+    }
   }
 
   Future<void> toggleCamera(bool cameraOff) async {
-    _localStream?.getVideoTracks().forEach((track) {
+    for (final track in _localStream?.getVideoTracks() ?? <MediaStreamTrack>[]) {
       track.enabled = !cameraOff;
-    });
+    }
   }
 
   Future<void> switchCamera() async {
@@ -201,12 +234,16 @@ class WebRtcService {
 
   // -- Signal Handlers -----------------------------------------------
 
-  Future<void> _handleIncomingOffer(dynamic data) async {
+  Future<void> handleIncomingOffer(Map<String, dynamic> data) async {
     final callId = data["callId"] as String;
     final fromUserId = data["fromUserId"] as String;
-    final sdp = data["sdp"] as Map<String, dynamic>;
+    final sdp = Map<String, dynamic>.from(data["sdp"] as Map);
     final callTypeStr = data["callType"] as String;
     final callType = callTypeStr == "video" ? CallType.video : CallType.audio;
+
+    _currentCallId = callId;
+    _currentPeerId = fromUserId;
+    _callType = callType;
 
     final offer = RTCSessionDescription(sdp["sdp"] as String?, sdp["type"] as String?);
     _updateCallState(CallState.incoming);
@@ -219,15 +256,15 @@ class WebRtcService {
     }));
   }
 
-  Future<void> _handleAnswer(dynamic data) async {
-    final sdp = data["sdp"] as Map<String, dynamic>;
+  Future<void> handleAnswer(Map<String, dynamic> data) async {
+    final sdp = Map<String, dynamic>.from(data["sdp"] as Map);
     final answer = RTCSessionDescription(sdp["sdp"] as String?, sdp["type"] as String?);
     await _peerConnection?.setRemoteDescription(answer);
     _updateCallState(CallState.connected);
   }
 
-  Future<void> _handleIceCandidate(dynamic data) async {
-    final candidate = data["candidate"] as Map<String, dynamic>;
+  Future<void> handleIceCandidate(Map<String, dynamic> data) async {
+    final candidate = Map<String, dynamic>.from(data["candidate"] as Map);
     await _peerConnection?.addCandidate(RTCIceCandidate(
       candidate["candidate"] as String?,
       candidate["sdpMid"] as String?,
@@ -235,8 +272,8 @@ class WebRtcService {
     ));
   }
 
-  Future<void> _handleCallEnd(dynamic data) async {
-    final reason = data["reason"] as String;
+  Future<void> handleCallEnd(Map<String, dynamic> data) async {
+    final reason = data["reason"] as String? ?? "ended";
     _callEventController.add(CallEvent(type: "call_ended", data: {"reason": reason}));
     await _cleanup();
   }
@@ -253,7 +290,7 @@ class WebRtcService {
 
     _peerConnection!.onIceCandidate = (candidate) {
       if (candidate.candidate != null && _currentPeerId != null) {
-        _socket?.emit("webrtc:ice-candidate", {
+        _emitSignaling("webrtc:ice-candidate", {
           "callId": _currentCallId,
           "targetUserId": _currentPeerId,
           "candidate": candidate.toMap(),
@@ -270,9 +307,11 @@ class WebRtcService {
       }
     };
 
-    _peerConnection!.onTrack = (event) {
+    _peerConnection!.onTrack = (event) async {
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams[0];
+        await initializeRenderers();
+        _remoteRenderer.srcObject = _remoteStream;
         _remoteStreamController.add(_remoteStream);
       }
     };
@@ -290,13 +329,13 @@ class WebRtcService {
     final constraints = {
       "audio": true,
       "video": callType == CallType.video
-        ? {
-            "facingMode": "user",
-            "width": {"ideal": 1280},
-            "height": {"ideal": 720},
-            "frameRate": {"ideal": 30},
-          }
-        : false,
+          ? {
+              "facingMode": "user",
+              "width": {"ideal": 1280},
+              "height": {"ideal": 720},
+              "frameRate": {"ideal": 30},
+            }
+          : false,
     };
     return navigator.mediaDevices.getUserMedia(constraints);
   }
@@ -308,6 +347,9 @@ class WebRtcService {
 
   Future<void> _cleanup() async {
     _updateCallState(CallState.ended);
+
+    _localRenderer.srcObject = null;
+    _remoteRenderer.srcObject = null;
 
     _localStream?.getTracks().forEach((t) => t.stop());
     _localStream?.dispose();
@@ -330,6 +372,11 @@ class WebRtcService {
 
   Future<void> dispose() async {
     await _cleanup();
+    if (_renderersInitialized) {
+      await _localRenderer.dispose();
+      await _remoteRenderer.dispose();
+      _renderersInitialized = false;
+    }
     await _callStateController.close();
     await _remoteStreamController.close();
     await _callEventController.close();

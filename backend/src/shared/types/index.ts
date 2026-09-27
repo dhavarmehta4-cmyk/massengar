@@ -144,6 +144,18 @@ export interface WsPayloadDeleteMessage {
 }
 
 // WebRTC Signaling
+export interface RTCSessionDescriptionInit {
+  sdp?: string;
+  type?: "offer" | "answer" | "pranswer" | "rollback";
+}
+
+export interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+}
+
 export interface WsPayloadWebRtcOffer {
   callId: string;
   targetUserId: string;

@@ -73,7 +73,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: [AppTheme.secondary.withOpacity(0.3), Colors.transparent],
+                  colors: [AppTheme.secondary.withValues(alpha: 0.3), Colors.transparent],
                 ),
               ),
             ),

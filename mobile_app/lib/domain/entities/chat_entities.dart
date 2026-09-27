@@ -83,6 +83,9 @@ class Conversation extends Equatable {
   final int unreadCount;
   final bool isLocked;
   final bool isOnline;
+  final String? _participantId;
+
+  String get participantId => _participantId ?? id;
 
   const Conversation({
     required this.id,
@@ -93,7 +96,8 @@ class Conversation extends Equatable {
     this.unreadCount = 0,
     this.isLocked = false,
     this.isOnline = false,
-  });
+    String? participantId,
+  }) : _participantId = participantId;
 
   String get formattedTime {
     final now  = DateTime.now();

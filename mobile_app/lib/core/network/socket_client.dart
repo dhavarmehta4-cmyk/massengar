@@ -1,4 +1,5 @@
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter/foundation.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io_client;
 import 'dart:async';
 
 class SocketClient {
@@ -6,13 +7,23 @@ class SocketClient {
   factory SocketClient() => _instance;
   SocketClient._internal();
 
-  IO.Socket? _socket;
+  io_client.Socket? _socket;
+  io_client.Socket? get socket => _socket;
+
   final StreamController<Map<String, dynamic>> _messageStreamController = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _webrtcOfferController = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _webrtcAnswerController = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _webrtcIceCandidateController = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _webrtcCallEndController = StreamController.broadcast();
 
   Stream<Map<String, dynamic>> get messageStream => _messageStreamController.stream;
+  Stream<Map<String, dynamic>> get webrtcOfferStream => _webrtcOfferController.stream;
+  Stream<Map<String, dynamic>> get webrtcAnswerStream => _webrtcAnswerController.stream;
+  Stream<Map<String, dynamic>> get webrtcIceCandidateStream => _webrtcIceCandidateController.stream;
+  Stream<Map<String, dynamic>> get webrtcCallEndStream => _webrtcCallEndController.stream;
 
   void connect(String serverUrl, String token) {
-    _socket = IO.io(serverUrl, <String, dynamic>{
+    _socket = io_client.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
       'auth': {'token': token}
@@ -21,18 +32,49 @@ class SocketClient {
     _socket?.connect();
 
     _socket?.onConnect((_) {
-      print('Connected to Socket.IO server');
+      debugPrint('Connected to Socket.IO server');
     });
 
     _socket?.on('message:new', (data) {
-      _messageStreamController.add(Map<String, dynamic>.from(data));
+      if (data != null) {
+        _messageStreamController.add(Map<String, dynamic>.from(data as Map));
+      }
     });
 
-    _socket?.onDisconnect((_) => print('Disconnected from Socket.IO server'));
+    // WebRTC Signaling
+    _socket?.on('webrtc:offer', (data) {
+      if (data != null) {
+        _webrtcOfferController.add(Map<String, dynamic>.from(data as Map));
+      }
+    });
+
+    _socket?.on('webrtc:answer', (data) {
+      if (data != null) {
+        _webrtcAnswerController.add(Map<String, dynamic>.from(data as Map));
+      }
+    });
+
+    _socket?.on('webrtc:ice-candidate', (data) {
+      if (data != null) {
+        _webrtcIceCandidateController.add(Map<String, dynamic>.from(data as Map));
+      }
+    });
+
+    _socket?.on('webrtc:call-end', (data) {
+      if (data != null) {
+        _webrtcCallEndController.add(Map<String, dynamic>.from(data as Map));
+      }
+    });
+
+    _socket?.onDisconnect((_) => debugPrint('Disconnected from Socket.IO server'));
   }
 
   void sendMessage(Map<String, dynamic> payload) {
     _socket?.emit('message:send', payload);
+  }
+
+  void emitSignaling(String event, Map<String, dynamic> payload) {
+    _socket?.emit(event, payload);
   }
 
   void disconnect() {

@@ -4,7 +4,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/security/biometric_lock_service.dart';
 import '../../../domain/entities/chat_entities.dart';
+import '../../../domain/usecases/calls/webrtc_service.dart';
+import '../../blocs/calls/call_bloc.dart';
 import '../../blocs/chat/chat_bloc.dart';
+import '../calls/call_screen.dart';
 
 class ChatRoomScreen extends StatefulWidget {
   final Conversation conversation;
@@ -106,8 +109,32 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.call),    onPressed: () {}),
-          IconButton(icon: const Icon(Icons.videocam), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.call),
+            onPressed: () {
+              context.read<CallBloc>().add(StartCall(
+                targetUserId: widget.conversation.participantId,
+                targetUserName: widget.conversation.name,
+                callType: CallType.audio,
+              ));
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CallScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.videocam),
+            onPressed: () {
+              context.read<CallBloc>().add(StartCall(
+                targetUserId: widget.conversation.participantId,
+                targetUserName: widget.conversation.name,
+                callType: CallType.video,
+              ));
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CallScreen()),
+              );
+            },
+          ),
         ],
       ),
       body: BlocConsumer<ChatBloc, ChatState>(
@@ -204,13 +231,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: AppTheme.primary.withOpacity(0.6),
+                          color: AppTheme.primary.withValues(alpha: 0.6),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Sending…',
-                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted.withOpacity(0.7)),
+                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted.withValues(alpha: 0.7)),
                       ),
                     ],
                   ),
@@ -234,14 +261,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isMe ? AppTheme.primary : AppTheme.surface.withOpacity(0.8),
+          color: isMe ? AppTheme.primary : AppTheme.surface.withValues(alpha: 0.8),
           borderRadius: BorderRadius.only(
             topLeft:     const Radius.circular(20),
             topRight:    const Radius.circular(20),
             bottomLeft:  isMe ? const Radius.circular(20) : const Radius.circular(4),
             bottomRight: isMe ? const Radius.circular(4)  : const Radius.circular(20),
           ),
-          border: isMe ? null : Border.all(color: Colors.white.withOpacity(0.05)),
+          border: isMe ? null : Border.all(color: Colors.white.withValues(alpha: 0.05)),
         ),
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -253,7 +280,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               children: [
                 Text(
                   msg.formattedTime,
-                  style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.6)),
+                  style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.6)),
                 ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
@@ -270,11 +297,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   Widget _buildStatusIcon(MessageStatus status) {
     switch (status) {
       case MessageStatus.sending:
-        return Icon(Icons.access_time, size: 12, color: Colors.white.withOpacity(0.5));
+        return Icon(Icons.access_time, size: 12, color: Colors.white.withValues(alpha: 0.5));
       case MessageStatus.sent:
-        return Icon(Icons.check, size: 12, color: Colors.white.withOpacity(0.5));
+        return Icon(Icons.check, size: 12, color: Colors.white.withValues(alpha: 0.5));
       case MessageStatus.delivered:
-        return Icon(Icons.done_all, size: 12, color: Colors.white.withOpacity(0.5));
+        return Icon(Icons.done_all, size: 12, color: Colors.white.withValues(alpha: 0.5));
       case MessageStatus.read:
         return const Icon(Icons.done_all, size: 12, color: AppTheme.secondary);
       case MessageStatus.failed:
@@ -288,7 +315,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: AppTheme.surface.withOpacity(0.6),
+          color: AppTheme.surface.withValues(alpha: 0.6),
           child: SafeArea(
             child: Row(
               children: [
@@ -304,7 +331,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     decoration: InputDecoration(
                       hintText: 'Message…',
                       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      fillColor: Colors.black.withOpacity(0.2),
+                      fillColor: Colors.black.withValues(alpha: 0.2),
                     ),
                   ),
                 ),
